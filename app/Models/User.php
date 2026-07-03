@@ -34,16 +34,24 @@ class User extends Authenticatable implements JWTSubject, CanResetPasswordContra
         'handicap_certificate',
         'id_document',
         'passport_photo',
+        'email_verified_at',
+        'suspended_at',
     ];
 
     protected function casts(): array
     {
         return [
             'email_verified_at' => 'datetime',
+            'suspended_at' => 'datetime',
             'password' => 'hashed',
             'handicap' => 'float',
             'ranking' => 'integer',
         ];
+    }
+
+    public function isSuspended(): bool
+    {
+        return $this->suspended_at !== null;
     }
 
     public function getJWTIdentifier()

@@ -46,4 +46,15 @@ class FixtureController extends Controller
 
         return response()->json($fixtures);
     }
+
+    public function destroy($id)
+    {
+        $fixture = Fixture::findOrFail($id);
+
+        $fixture->players()->detach();
+        $fixture->scores()->delete();
+        $fixture->delete();
+
+        return response()->json(['message' => 'Fixture deleted successfully']);
+    }
 }

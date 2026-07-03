@@ -22,9 +22,9 @@ Route::prefix('v1')->group(function () {
     Route::prefix('auth')->group(function () {
         Route::post('/login', [AuthController::class, 'login']);
         Route::post('/register', [AuthController::class, 'register']);
-Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
-Route::post('/reset-password', [AuthController::class, 'resetPassword']);
-Route::post('/resend-verification', [AuthController::class, 'resendVerification']);
+        Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+        Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+        Route::post('/resend-verification', [AuthController::class, 'resendVerification']);
         Route::post('/verify-email', [AuthController::class, 'verifyEmail']);
     });
 
@@ -102,13 +102,31 @@ Route::post('/resend-verification', [AuthController::class, 'resendVerification'
         Route::prefix('admin')->middleware('role:admin')->group(function () {
             Route::get('/stats', [AdminController::class, 'stats']);
             Route::get('/users', [AdminController::class, 'users']);
+            Route::post('/users', [AdminController::class, 'createUser']);
             Route::patch('/users/{userId}/role', [AdminController::class, 'updateRole']);
+            Route::put('/users/{userId}', [AdminController::class, 'updateUser']);
+            Route::delete('/users/{userId}', [AdminController::class, 'deleteUser']);
+            Route::post('/users/{userId}/verify-email', [AdminController::class, 'verifyUserEmail']);
+            Route::post('/users/{userId}/unverify-email', [AdminController::class, 'unverifyUserEmail']);
+            Route::post('/users/{userId}/suspend', [AdminController::class, 'suspendUser']);
+            Route::post('/users/{userId}/unsuspend', [AdminController::class, 'unsuspendUser']);
+            Route::post('/users/{userId}/reset-password', [AdminController::class, 'resetUserPassword']);
             Route::get('/analytics', [AdminController::class, 'analytics']);
             Route::get('/audit-logs', [AdminController::class, 'auditLogs']);
             Route::get('/players', [AdminController::class, 'listPlayers']);
             Route::post('/players/{id}/approve', [AdminController::class, 'approvePlayer']);
             Route::post('/players/{id}/reject', [AdminController::class, 'rejectPlayer']);
             Route::post('/committee', [AdminController::class, 'createCommittee']);
+            // Admin CRUD for clubs
+            Route::get('/clubs', [ClubController::class, 'all']);
+            // Admin CRUD for news
+            Route::post('/news', [NewsController::class, 'store']);
+            Route::put('/news/{id}', [NewsController::class, 'update']);
+            Route::delete('/news/{id}', [NewsController::class, 'destroy']);
+            // Admin CRUD for tournaments
+            Route::post('/tournaments', [TournamentController::class, 'store']);
+            Route::put('/tournaments/{id}', [TournamentController::class, 'update']);
+            Route::delete('/tournaments/{id}', [TournamentController::class, 'destroy']);
         });
 
         // Committee routes
@@ -118,6 +136,7 @@ Route::post('/resend-verification', [AuthController::class, 'resendVerification'
             Route::post('/tournaments/{id}/publish', [CommitteeController::class, 'publishTournament']);
 
             Route::post('/fixtures', [CommitteeController::class, 'createFixture']);
+            Route::delete('/fixtures/{id}', [FixtureController::class, 'destroy']);
             Route::post('/fixtures/{fixtureId}/assign', [CommitteeController::class, 'assignPlayers']);
             Route::post('/fixtures/{fixtureId}/scores', [CommitteeController::class, 'submitScores']);
             Route::post('/fixtures/{fixtureId}/scores/publish', [CommitteeController::class, 'publishScores']);

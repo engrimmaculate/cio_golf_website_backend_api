@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Club;
 use App\Models\Player;
 use App\Models\User;
+use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -179,6 +180,12 @@ class ClubController extends Controller
             'created' => $created,
             'errors' => $errors,
         ], empty($errors) ? 201 : 201);
+    }
+
+    public function all()
+    {
+        $clubs = Club::withCount('players')->latest()->get();
+        return response()->json($clubs);
     }
 
     public function listPlayers(Request $request)
