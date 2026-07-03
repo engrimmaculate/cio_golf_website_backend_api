@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\ClubController;
 use App\Http\Controllers\Api\CommitteeController;
 use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\FixtureController;
@@ -15,20 +16,16 @@ use App\Http\Controllers\Api\TeamController;
 use App\Http\Controllers\Api\TournamentController;
 use Illuminate\Support\Facades\Route;
 
-/*
-|--------------------------------------------------------------------------
-| API Routes
-|--------------------------------------------------------------------------
-*/
-
 Route::prefix('v1')->group(function () {
 
     // Public routes
     Route::prefix('auth')->group(function () {
         Route::post('/login', [AuthController::class, 'login']);
         Route::post('/register', [AuthController::class, 'register']);
-        Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
-        Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+Route::post('/resend-verification', [AuthController::class, 'resendVerification']);
+        Route::post('/verify-email', [AuthController::class, 'verifyEmail']);
     });
 
     Route::get('/tournaments', [TournamentController::class, 'index']);
@@ -56,8 +53,10 @@ Route::prefix('v1')->group(function () {
     Route::get('/team', [TeamController::class, 'index']);
     Route::get('/team/department/{department}', [TeamController::class, 'byDepartment']);
 
-    // Contact
     Route::post('/contact', [ContactController::class, 'send']);
+
+    // Public CSV template download
+    Route::get('/club/csv-template', [ClubController::class, 'downloadCsvTemplate']);
 
     // Protected routes
     Route::middleware('auth:sanctum')->group(function () {
@@ -68,10 +67,19 @@ Route::prefix('v1')->group(function () {
             Route::post('/logout', [AuthController::class, 'logout']);
         });
 
-        // Player routes
-        Route::get('/players/profile', [PlayerController::class, 'profile']);
+        // Player routes (own profile)
+        Route::get('/players/profile', [PlayerController::class, 'myProfile']);
+        Route::post('/players/profile/complete', [PlayerController::class, 'completeRegistration']);
         Route::put('/players/profile', [PlayerController::class, 'updateProfile']);
         Route::post('/players/documents', [PlayerController::class, 'uploadDocument']);
+
+        // Club routes
+        Route::prefix('club')->middleware('role:player')->group(function () {
+            Route::get('/profile', [ClubController::class, 'profile']);
+            Route::put('/profile', [ClubController::class, 'updateProfile']);
+            Route::post('/players/upload', [ClubController::class, 'uploadPlayers']);
+            Route::get('/players', [ClubController::class, 'listPlayers']);
+        });
 
         // Fixtures
         Route::get('/fixtures/my', [FixtureController::class, 'myFixtures']);
@@ -97,6 +105,10 @@ Route::prefix('v1')->group(function () {
             Route::patch('/users/{userId}/role', [AdminController::class, 'updateRole']);
             Route::get('/analytics', [AdminController::class, 'analytics']);
             Route::get('/audit-logs', [AdminController::class, 'auditLogs']);
+            Route::get('/players', [AdminController::class, 'listPlayers']);
+            Route::post('/players/{id}/approve', [AdminController::class, 'approvePlayer']);
+            Route::post('/players/{id}/reject', [AdminController::class, 'rejectPlayer']);
+            Route::post('/committee', [AdminController::class, 'createCommittee']);
         });
 
         // Committee routes

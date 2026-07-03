@@ -22,6 +22,7 @@ class User extends Authenticatable implements JWTSubject, CanResetPasswordContra
         'email',
         'password',
         'role',
+        'user_type',
         'nationality',
         'country',
         'phone',
@@ -83,5 +84,20 @@ class User extends Authenticatable implements JWTSubject, CanResetPasswordContra
     public function auditLogs()
     {
         return $this->hasMany(AuditLog::class);
+    }
+
+    public function club()
+    {
+        return $this->hasOne(Club::class);
+    }
+
+    public function player()
+    {
+        return $this->hasOne(Player::class);
+    }
+
+    public function sponsorProfile()
+    {
+        return $this->hasOne(SponsorProfile::class);
     }
 }

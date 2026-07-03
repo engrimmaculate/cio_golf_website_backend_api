@@ -4,12 +4,15 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\Player;
 use App\Models\Tournament;
 use App\Models\Sponsor;
 use App\Models\Registration;
 use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 
 class AdminController extends Controller
 {
@@ -89,5 +92,106 @@ class AdminController extends Controller
             ->paginate($request->get('per_page', 50));
 
         return response()->json($logs);
+    }
+
+    public function listPlayers(Request $request)
+    {
+        $query = Player::with(['club', 'user']);
+
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->has('club_id')) {
+            $query->where('club_id', $request->club_id);
+        }
+
+        $players = $query->latest()->paginate($request->get('per_page', 20));
+
+        return response()->json($players);
+    }
+
+    public function approvePlayer(Request $request, $id)
+    {
+        $player = Player::findOrFail($id);
+
+        if ($player->status !== 'completed') {
+            return response()->json(['message' => 'Player must complete registration first.'], 400);
+        }
+
+        $paymentLink = $request->input('payment_link', url('/payment/' . $player->id));
+
+        $player->update([
+            'status' => 'approved',
+            'approved_at' => now(),
+        ]);
+
+        if ($player->user) {
+            try {
+                Mail::send('emails.player-approved', [
+                    'name' => $player->full_name,
+                    'paymentLink' => $paymentLink,
+                ], function ($message) use ($player) {
+                    $message->to($player->email, $player->full_name)
+                        ->subject('Registration Approved - CIO International Golf Championship');
+                });
+            } catch (\Exception $e) {
+                // Log error but don't fail
+            }
+        }
+
+        return response()->json([
+            'message' => 'Player approved. Notification sent.',
+            'player' => $player->fresh(),
+        ]);
+    }
+
+    public function rejectPlayer(Request $request, $id)
+    {
+        $player = Player::findOrFail($id);
+
+        $request->validate(['reason' => 'nullable|string']);
+
+        $player->update(['status' => 'rejected']);
+
+        if ($player->user) {
+            try {
+                Mail::send('emails.player-rejected', [
+                    'name' => $player->full_name,
+                    'reason' => $request->reason ?? 'Your registration did not meet the required criteria.',
+                ], function ($message) use ($player) {
+                    $message->to($player->email, $player->full_name)
+                        ->subject('Registration Update - CIO International Golf Championship');
+                });
+            } catch (\Exception $e) {
+                // Log error
+            }
+        }
+
+        return response()->json(['message' => 'Player rejected.', 'player' => $player->fresh()]);
+    }
+
+    public function createCommittee(Request $request)
+    {
+        $request->validate([
+            'full_name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users',
+            'phone' => 'required|string',
+            'password' => 'required|min:8|confirmed',
+        ]);
+
+        $user = User::create([
+            'name' => $request->full_name,
+            'email' => $request->email,
+            'password' => Hash::make($request->password),
+            'role' => 'committee',
+            'user_type' => 'committee',
+            'phone' => $request->phone,
+        ]);
+
+        return response()->json([
+            'message' => 'Committee account created successfully.',
+            'user' => $user,
+        ], 201);
     }
 }
