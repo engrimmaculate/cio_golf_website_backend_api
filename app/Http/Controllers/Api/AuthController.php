@@ -75,22 +75,66 @@ class AuthController extends Controller
             ]);
         }
 
-        $token = $user->createToken('auth-token')->plainTextToken;
+        $authToken = $user->createToken('auth-token')->plainTextToken;
 
         $user->load(['club', 'sponsorProfile']);
 
         $this->sendVerificationEmail($user);
 
+        // Create player record and payment token
+        if (in_array($request->user_type, ['player', 'user'])) {
+            $player = Player::create([
+                'user_id' => $user->id,
+                'full_name' => $user->name,
+                'email' => $user->email,
+                'phone' => $user->phone ?? null,
+                'status' => 'pending',
+            ]);
+
+            $paymentToken = \App\Models\Payment::generateToken();
+            $amount = config('services.paystack.registration_fee', 50000);
+
+            \App\Models\Payment::create([
+                'player_id' => $player->id,
+                'user_id' => $user->id,
+                'reference' => \App\Models\Payment::generateReference(),
+                'amount' => $amount,
+                'currency' => 'NGN',
+                'status' => 'pending',
+                'token' => $paymentToken,
+                'token_expires_at' => now()->addDays(7),
+                'description' => 'CIO International Golf Classic 7th Edition - Registration Fee',
+            ]);
+
+            // Send registration email
+            try {
+                $verificationToken = sha1($user->email . $user->created_at->timestamp);
+                $frontendUrl = rtrim(env('FRONTEND_URL', 'http://localhost:3000'), '/');
+                $verificationUrl = $frontendUrl . '/verify-email?token=' . $verificationToken . '&email=' . urlencode($user->email);
+
+                Mail::send('emails.player-registered', [
+                    'name' => $user->name,
+                    'verificationUrl' => $verificationUrl,
+                ], function ($message) use ($user) {
+                    $message->to($user->email, $user->name)
+                        ->subject('Registration Received — CIO International Golf Classic 7th Edition');
+                });
+            } catch (\Exception $e) {
+                \Log::error('Registration email failed: ' . $e->getMessage());
+            }
+        }
+
         return response()->json([
             'user' => $user,
-            'token' => $token,
+            'token' => $authToken,
         ], 201);
     }
 
     protected function sendVerificationEmail(User $user): void
     {
         $verificationToken = sha1($user->email . $user->created_at->timestamp);
-        $verificationUrl = config('app.frontend_url') . '/verify-email?token=' . $verificationToken . '&email=' . urlencode($user->email);
+        $frontendUrl = rtrim(env('FRONTEND_URL', 'http://localhost:3000'), '/');
+        $verificationUrl = $frontendUrl . '/verify-email?token=' . $verificationToken . '&email=' . urlencode($user->email);
 
         try {
             Mail::send('emails.verify-email', [
@@ -138,13 +182,56 @@ class AuthController extends Controller
         $user->update(['email_verified_at' => now()]);
 
         $player = Player::where('user_id', $user->id)->first();
-        if ($player && $player->status === 'invited') {
+        if ($player && in_array($player->status, ['invited', 'pending'])) {
             $player->update(['status' => 'verified', 'verified_at' => now()]);
+        }
+
+        // Send payment link after email verification
+        if ($player) {
+            $payment = \App\Models\Payment::where('player_id', $player->id)
+                ->where('status', 'pending')
+                ->first();
+
+            if ($payment && $payment->token && $payment->isTokenValid()) {
+                try {
+                    $frontendUrl = rtrim(env('FRONTEND_URL', 'http://localhost:3000'), '/');
+                    $paymentUrl = $frontendUrl . '/payment/public/' . $payment->token;
+                    $player->load('tournament');
+                    $amount = $player->tournament->registration_fee ?? config('services.paystack.registration_fee', 50000);
+
+                    Mail::send('emails.player-payment-link', [
+                        'name' => $user->name,
+                        'paymentUrl' => $paymentUrl,
+                        'amount' => $amount,
+                        'expiresAt' => $payment->token_expires_at->format('F j, Y'),
+                    ], function ($message) use ($user) {
+                        $message->to($user->email, $user->name)
+                            ->subject('Complete Your Payment — CIO International Golf Classic');
+                    });
+                } catch (\Exception $e) {
+                    \Log::error('Payment link email failed: ' . $e->getMessage());
+                }
+            }
         }
 
         return response()->json([
             'message' => 'Email verified successfully. You can now log in.',
         ]);
+    }
+
+    public function verifyEmailRedirect(Request $request)
+    {
+        $frontendUrl = rtrim(env('FRONTEND_URL', 'http://localhost:3000'), '/');
+        $token = $request->query('token', '');
+        $email = $request->query('email', '');
+
+        $url = $frontendUrl . '/verify-email';
+        $params = http_build_query(array_filter(['token' => $token, 'email' => $email]));
+        if ($params) {
+            $url .= '?' . $params;
+        }
+
+        return redirect($url);
     }
 
     public function me(Request $request)

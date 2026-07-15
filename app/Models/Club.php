@@ -19,6 +19,13 @@ class Club extends Model
         'contact_email',
         'contact_phone',
         'status',
+        'm1_18',
+        'm20_28',
+        'm_snr',
+        'l1_20',
+        'l21_28',
+        'l_snr',
+        'edition',
     ];
 
     public function user()

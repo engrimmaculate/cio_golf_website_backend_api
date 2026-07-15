@@ -14,6 +14,10 @@ use Illuminate\Support\Str;
 
 class ClubController extends Controller
 {
+    // ──────────────────────────────────────────────
+    // Club Owner (role:player, user_type:club) routes
+    // ──────────────────────────────────────────────
+
     public function profile(Request $request)
     {
         $club = Club::where('user_id', $request->user()->id)->firstOrFail();
@@ -146,11 +150,12 @@ class ClubController extends Controller
             ]);
 
             try {
-                $verificationToken = sha1($playerUser->email . Str::random(16));
                 $playerUser->email_verified_at = null;
                 $playerUser->save();
 
-                $verificationUrl = url('/api/v1/auth/verify-email?token=' . $verificationToken . '&email=' . urlencode($email));
+                $verificationToken = sha1($playerUser->email . $playerUser->created_at->timestamp);
+                $frontendUrl = rtrim(env('FRONTEND_URL', 'http://localhost:3000'), '/');
+                $verificationUrl = $frontendUrl . '/verify-email?token=' . $verificationToken . '&email=' . urlencode($email);
 
                 Mail::send('emails.player-invite', [
                     'name' => $fullName,
@@ -182,12 +187,6 @@ class ClubController extends Controller
         ], empty($errors) ? 201 : 201);
     }
 
-    public function all()
-    {
-        $clubs = Club::withCount('players')->latest()->get();
-        return response()->json($clubs);
-    }
-
     public function listPlayers(Request $request)
     {
         if ($request->user()->user_type !== 'club') {
@@ -201,5 +200,342 @@ class ClubController extends Controller
             ->get();
 
         return response()->json($players);
+    }
+
+    // ──────────────────────────────────────────────
+    // Admin & Committee CRUD for Clubs
+    // ──────────────────────────────────────────────
+
+    public function all(Request $request)
+    {
+        $query = Club::withCount('players');
+
+        if ($request->has('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('club_name', 'like', "%{$search}%")
+                  ->orWhere('state', 'like', "%{$search}%")
+                  ->orWhere('country', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->has('state')) {
+            $query->where('state', $request->state);
+        }
+
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+
+        $clubs = $query->latest()->paginate($request->get('per_page', 50));
+
+        return response()->json($clubs);
+    }
+
+    public function show($id)
+    {
+        $club = Club::withCount('players')->with('players')->findOrFail($id);
+        return response()->json($club);
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'club_name' => 'required|string|max:255',
+            'city' => 'nullable|string|max:255',
+            'state' => 'nullable|string|max:255',
+            'country' => 'nullable|string|max:255',
+            'contact_person' => 'nullable|string|max:255',
+            'contact_email' => 'nullable|email',
+            'contact_phone' => 'nullable|string|max:255',
+            'm1_18' => 'nullable|integer|min:0',
+            'm20_28' => 'nullable|integer|min:0',
+            'm_snr' => 'nullable|integer|min:0',
+            'l1_20' => 'nullable|integer|min:0',
+            'l21_28' => 'nullable|integer|min:0',
+            'l_snr' => 'nullable|integer|min:0',
+            'edition' => 'nullable|string|max:50',
+        ]);
+
+        $validated['status'] = 'active';
+        $validated['country'] = $validated['country'] ?? 'Nigeria';
+        $validated['edition'] = $validated['edition'] ?? '7th';
+
+        $club = Club::create($validated);
+
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'action' => 'create_club',
+            'model_type' => Club::class,
+            'model_id' => $club->id,
+            'new_values' => $validated,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json([
+            'message' => 'Club created successfully.',
+            'club' => $club,
+        ], 201);
+    }
+
+    public function update(Request $request, $id)
+    {
+        $club = Club::findOrFail($id);
+
+        $validated = $request->validate([
+            'club_name' => 'sometimes|string|max:255',
+            'city' => 'nullable|string|max:255',
+            'state' => 'nullable|string|max:255',
+            'country' => 'nullable|string|max:255',
+            'contact_person' => 'nullable|string|max:255',
+            'contact_email' => 'nullable|email',
+            'contact_phone' => 'nullable|string|max:255',
+            'status' => 'nullable|in:active,inactive',
+            'm1_18' => 'nullable|integer|min:0',
+            'm20_28' => 'nullable|integer|min:0',
+            'm_snr' => 'nullable|integer|min:0',
+            'l1_20' => 'nullable|integer|min:0',
+            'l21_28' => 'nullable|integer|min:0',
+            'l_snr' => 'nullable|integer|min:0',
+            'edition' => 'nullable|string|max:50',
+        ]);
+
+        $oldValues = $club->getOriginal();
+        $club->update($validated);
+
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'action' => 'update_club',
+            'model_type' => Club::class,
+            'model_id' => $club->id,
+            'old_values' => $oldValues,
+            'new_values' => $validated,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json([
+            'message' => 'Club updated successfully.',
+            'club' => $club->fresh(),
+        ]);
+    }
+
+    public function destroy(Request $request, $id)
+    {
+        $club = Club::findOrFail($id);
+
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'action' => 'delete_club',
+            'model_type' => Club::class,
+            'model_id' => $club->id,
+            'old_values' => $club->toArray(),
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        $club->delete();
+
+        return response()->json(['message' => 'Club deleted successfully.']);
+    }
+
+    // ──────────────────────────────────────────────
+    // Admin & Committee CRUD for Players per Club
+    // ──────────────────────────────────────────────
+
+    public function clubPlayers(Request $request, $clubId)
+    {
+        $club = Club::findOrFail($clubId);
+
+        $query = Player::where('club_id', $club->id);
+
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->has('gender')) {
+            $query->where('gender', $request->gender);
+        }
+
+        if ($request->has('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('full_name', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%");
+            });
+        }
+
+        $players = $query->orderBy('created_at', 'desc')
+            ->paginate($request->get('per_page', 20));
+
+        return response()->json([
+            'club' => $club,
+            'players' => $players,
+        ]);
+    }
+
+    public function showClubPlayer($clubId, $playerId)
+    {
+        $player = Player::where('club_id', $clubId)->findOrFail($playerId);
+        return response()->json($player);
+    }
+
+    public function storeClubPlayer(Request $request, $clubId)
+    {
+        $club = Club::findOrFail($clubId);
+
+        $validated = $request->validate([
+            'full_name' => 'required|string|max:255',
+            'email' => 'required|email|unique:players,email',
+            'phone' => 'nullable|string|max:255',
+            'gender' => 'nullable|in:male,female,other',
+            'category' => 'nullable|string|max:255',
+            'handicap' => 'nullable|numeric|min:0|max:54',
+            'shirt_size' => 'nullable|string|max:10',
+            'ranking' => 'nullable|integer|min:0',
+            'city' => 'nullable|string|max:255',
+            'state' => 'nullable|string|max:255',
+            'country' => 'nullable|string|max:255',
+            'experience' => 'nullable|string',
+            'tournament_id' => 'nullable|exists:tournaments,id',
+            'create_user' => 'nullable|boolean',
+        ]);
+
+        $createUser = $validated['create_user'] ?? false;
+        unset($validated['create_user']);
+
+        $playerUserId = null;
+        if ($createUser) {
+            $tempPassword = Str::random(12);
+            $playerUser = User::create([
+                'name' => $validated['full_name'],
+                'email' => $validated['email'],
+                'password' => Hash::make($tempPassword),
+                'role' => 'player',
+                'user_type' => 'player',
+                'phone' => $validated['phone'] ?? null,
+            ]);
+            $playerUserId = $playerUser->id;
+
+            try {
+                $verificationToken = sha1($playerUser->email . $playerUser->created_at->timestamp);
+                $frontendUrl = rtrim(env('FRONTEND_URL', 'http://localhost:3000'), '/');
+                $verificationUrl = $frontendUrl . '/verify-email?token=' . $verificationToken . '&email=' . urlencode($validated['email']);
+
+                Mail::send('emails.player-invite', [
+                    'name' => $validated['full_name'],
+                    'clubName' => $club->club_name,
+                    'verificationUrl' => $verificationUrl,
+                    'email' => $validated['email'],
+                    'password' => $tempPassword,
+                ], function ($message) use ($validated) {
+                    $message->to($validated['email'], $validated['full_name'])
+                        ->subject('You\'ve been registered for CIO International Golf Championship');
+                });
+            } catch (\Exception $e) {
+                // Log but don't fail
+            }
+        }
+
+        $validated['club_id'] = $club->id;
+        $validated['user_id'] = $playerUserId;
+        $validated['status'] = 'pending';
+
+        $player = Player::create($validated);
+
+        // Create payment record if tournament is assigned
+        if (!empty($validated['tournament_id']) && $playerUserId) {
+            $tournament = \App\Models\Tournament::find($validated['tournament_id']);
+            $amount = $tournament->registration_fee ?? config('services.paystack.registration_fee', 50000);
+            $paymentToken = \App\Models\Payment::generateToken();
+
+            \App\Models\Payment::create([
+                'player_id' => $player->id,
+                'user_id' => $playerUserId,
+                'reference' => \App\Models\Payment::generateReference(),
+                'amount' => $amount,
+                'currency' => 'NGN',
+                'status' => 'pending',
+                'token' => $paymentToken,
+                'token_expires_at' => now()->addDays(7),
+                'description' => ($tournament->name ?? 'CIO Golf Classic') . ' - Registration Fee',
+            ]);
+        }
+
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'action' => 'create_player',
+            'model_type' => Player::class,
+            'model_id' => $player->id,
+            'new_values' => $validated,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json([
+            'message' => 'Player added to club successfully.',
+            'player' => $player,
+        ], 201);
+    }
+
+    public function updateClubPlayer(Request $request, $clubId, $playerId)
+    {
+        $player = Player::where('club_id', $clubId)->findOrFail($playerId);
+
+        $validated = $request->validate([
+            'full_name' => 'sometimes|string|max:255',
+            'email' => 'sometimes|email|unique:players,email,' . $playerId,
+            'phone' => 'nullable|string|max:255',
+            'gender' => 'nullable|in:male,female,other',
+            'category' => 'nullable|string|max:255',
+            'handicap' => 'nullable|numeric|min:0|max:54',
+            'shirt_size' => 'nullable|string|max:10',
+            'ranking' => 'nullable|integer|min:0',
+            'city' => 'nullable|string|max:255',
+            'state' => 'nullable|string|max:255',
+            'country' => 'nullable|string|max:255',
+            'experience' => 'nullable|string',
+            'tournament_id' => 'nullable|exists:tournaments,id',
+            'status' => 'nullable|in:pending,invited,verified,completed,approved,rejected',
+        ]);
+
+        $oldValues = $player->getOriginal();
+        $player->update($validated);
+
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'action' => 'update_player',
+            'model_type' => Player::class,
+            'model_id' => $player->id,
+            'old_values' => $oldValues,
+            'new_values' => $validated,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json([
+            'message' => 'Player updated successfully.',
+            'player' => $player->fresh(),
+        ]);
+    }
+
+    public function destroyClubPlayer(Request $request, $clubId, $playerId)
+    {
+        $player = Player::where('club_id', $clubId)->findOrFail($playerId);
+
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'action' => 'delete_player',
+            'model_type' => Player::class,
+            'model_id' => $player->id,
+            'old_values' => $player->toArray(),
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        $player->delete();
+
+        return response()->json(['message' => 'Player deleted successfully.']);
     }
 }

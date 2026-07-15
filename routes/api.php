@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\NewsController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PlayerController;
 use App\Http\Controllers\Api\RegistrationController;
+use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ScoreController;
 use App\Http\Controllers\Api\SponsorController;
 use App\Http\Controllers\Api\TeamController;
@@ -26,6 +27,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/reset-password', [AuthController::class, 'resetPassword']);
         Route::post('/resend-verification', [AuthController::class, 'resendVerification']);
         Route::post('/verify-email', [AuthController::class, 'verifyEmail']);
+        Route::get('/verify-email', [AuthController::class, 'verifyEmailRedirect']);
     });
 
     Route::get('/tournaments', [TournamentController::class, 'index']);
@@ -33,12 +35,27 @@ Route::prefix('v1')->group(function () {
     Route::get('/tournaments/published', [TournamentController::class, 'published']);
     Route::get('/tournaments/{id}', [TournamentController::class, 'show']);
 
-    Route::get('/fixtures', [FixtureController::class, 'index']);
-    Route::get('/fixtures/{id}', [FixtureController::class, 'show']);
-    Route::get('/tournaments/{tournamentId}/fixtures', [FixtureController::class, 'index']);
+    // Player routes (own profile) — must be before /players/{id}
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::get('/players/profile', [PlayerController::class, 'myProfile']);
+        Route::post('/players/profile/complete', [PlayerController::class, 'completeRegistration']);
+        Route::put('/players/profile', [PlayerController::class, 'updateProfile']);
+        Route::post('/players/documents', [PlayerController::class, 'uploadDocument']);
+        Route::post('/players/request-payment-link', [PlayerController::class, 'requestPaymentLink']);
+    });
 
     Route::get('/players', [PlayerController::class, 'index']);
     Route::get('/players/{id}', [PlayerController::class, 'show']);
+
+    Route::get('/fixtures', [FixtureController::class, 'index']);
+
+    // Fixture routes (own) — must be before /fixtures/{id}
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::get('/fixtures/my', [FixtureController::class, 'myFixtures']);
+    });
+
+    Route::get('/fixtures/{id}', [FixtureController::class, 'show']);
+    Route::get('/tournaments/{tournamentId}/fixtures', [FixtureController::class, 'index']);
 
     Route::get('/fixtures/{fixtureId}/scores', [ScoreController::class, 'fixtureScores']);
     Route::get('/tournaments/{tournamentId}/leaderboard', [ScoreController::class, 'leaderboard']);
@@ -58,6 +75,12 @@ Route::prefix('v1')->group(function () {
     // Public CSV template download
     Route::get('/club/csv-template', [ClubController::class, 'downloadCsvTemplate']);
 
+    // Public payment routes
+    Route::get('/payments/token/{token}', [PaymentController::class, 'initializeByToken']);
+    Route::post('/payments/verify', [PaymentController::class, 'verify']);
+    Route::get('/payments/{reference}', [PaymentController::class, 'getByReference']);
+    Route::post('/payments/webhook', [PaymentController::class, 'webhook']);
+
     // Protected routes
     Route::middleware('auth:sanctum')->group(function () {
 
@@ -67,12 +90,6 @@ Route::prefix('v1')->group(function () {
             Route::post('/logout', [AuthController::class, 'logout']);
         });
 
-        // Player routes (own profile)
-        Route::get('/players/profile', [PlayerController::class, 'myProfile']);
-        Route::post('/players/profile/complete', [PlayerController::class, 'completeRegistration']);
-        Route::put('/players/profile', [PlayerController::class, 'updateProfile']);
-        Route::post('/players/documents', [PlayerController::class, 'uploadDocument']);
-
         // Club routes
         Route::prefix('club')->middleware('role:player')->group(function () {
             Route::get('/profile', [ClubController::class, 'profile']);
@@ -80,9 +97,6 @@ Route::prefix('v1')->group(function () {
             Route::post('/players/upload', [ClubController::class, 'uploadPlayers']);
             Route::get('/players', [ClubController::class, 'listPlayers']);
         });
-
-        // Fixtures
-        Route::get('/fixtures/my', [FixtureController::class, 'myFixtures']);
 
         // Scores
         Route::get('/scores/my', [ScoreController::class, 'myScores']);
@@ -97,6 +111,10 @@ Route::prefix('v1')->group(function () {
         Route::post('/registration', [RegistrationController::class, 'submit']);
         Route::post('/registration/draft', [RegistrationController::class, 'saveDraft']);
         Route::get('/registration/status', [RegistrationController::class, 'status']);
+
+        // Player payment routes
+        Route::post('/payments/initialize', [PaymentController::class, 'initialize']);
+        Route::get('/payments/my', [PaymentController::class, 'myPayments']);
 
         // Admin routes
         Route::prefix('admin')->middleware('role:admin')->group(function () {
@@ -116,9 +134,30 @@ Route::prefix('v1')->group(function () {
             Route::get('/players', [AdminController::class, 'listPlayers']);
             Route::post('/players/{id}/approve', [AdminController::class, 'approvePlayer']);
             Route::post('/players/{id}/reject', [AdminController::class, 'rejectPlayer']);
+            Route::post('/players/{id}/send-payment-link', [AdminController::class, 'sendPaymentLink']);
+            Route::post('/players/{id}/regenerate-payment-link', [AdminController::class, 'regeneratePaymentLink']);
+            Route::get('/players/{id}/payment-links', [AdminController::class, 'playerPaymentLinks']);
             Route::post('/committee', [AdminController::class, 'createCommittee']);
-            // Admin CRUD for clubs
+
+            // Admin payment routes
+            Route::get('/payments', [PaymentController::class, 'adminPayments']);
+            Route::get('/payments/stats', [PaymentController::class, 'adminStats']);
+            Route::get('/webhook-logs', [PaymentController::class, 'webhookLogs']);
+
+            // Admin Club CRUD
             Route::get('/clubs', [ClubController::class, 'all']);
+            Route::post('/clubs', [ClubController::class, 'store']);
+            Route::get('/clubs/{id}', [ClubController::class, 'show']);
+            Route::put('/clubs/{id}', [ClubController::class, 'update']);
+            Route::delete('/clubs/{id}', [ClubController::class, 'destroy']);
+
+            // Admin Club Player CRUD
+            Route::get('/clubs/{clubId}/players', [ClubController::class, 'clubPlayers']);
+            Route::post('/clubs/{clubId}/players', [ClubController::class, 'storeClubPlayer']);
+            Route::get('/clubs/{clubId}/players/{playerId}', [ClubController::class, 'showClubPlayer']);
+            Route::put('/clubs/{clubId}/players/{playerId}', [ClubController::class, 'updateClubPlayer']);
+            Route::delete('/clubs/{clubId}/players/{playerId}', [ClubController::class, 'destroyClubPlayer']);
+
             // Admin CRUD for news
             Route::post('/news', [NewsController::class, 'store']);
             Route::put('/news/{id}', [NewsController::class, 'update']);
@@ -145,6 +184,20 @@ Route::prefix('v1')->group(function () {
             Route::post('/broadcast', [CommitteeController::class, 'broadcast']);
 
             Route::get('/reports/{type}', [CommitteeController::class, 'getReports']);
+
+            // Committee Club CRUD
+            Route::get('/clubs', [ClubController::class, 'all']);
+            Route::post('/clubs', [ClubController::class, 'store']);
+            Route::get('/clubs/{id}', [ClubController::class, 'show']);
+            Route::put('/clubs/{id}', [ClubController::class, 'update']);
+            Route::delete('/clubs/{id}', [ClubController::class, 'destroy']);
+
+            // Committee Club Player CRUD
+            Route::get('/clubs/{clubId}/players', [ClubController::class, 'clubPlayers']);
+            Route::post('/clubs/{clubId}/players', [ClubController::class, 'storeClubPlayer']);
+            Route::get('/clubs/{clubId}/players/{playerId}', [ClubController::class, 'showClubPlayer']);
+            Route::put('/clubs/{clubId}/players/{playerId}', [ClubController::class, 'updateClubPlayer']);
+            Route::delete('/clubs/{clubId}/players/{playerId}', [ClubController::class, 'destroyClubPlayer']);
         });
     });
 });

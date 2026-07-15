@@ -35,7 +35,7 @@ class Fixture extends Model
 
     public function players()
     {
-        return $this->belongsToMany(User::class, 'fixture_player')
+        return $this->belongsToMany(User::class, 'fixture_player', 'fixture_id', 'player_id')
             ->withPivot('score')
             ->withTimestamps();
     }

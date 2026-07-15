@@ -69,7 +69,7 @@ class User extends Authenticatable implements JWTSubject, CanResetPasswordContra
 
     public function fixtures()
     {
-        return $this->belongsToMany(Fixture::class, 'fixture_player')
+        return $this->belongsToMany(Fixture::class, 'fixture_player', 'player_id', 'fixture_id')
             ->withPivot('score')
             ->withTimestamps();
     }
@@ -107,5 +107,10 @@ class User extends Authenticatable implements JWTSubject, CanResetPasswordContra
     public function sponsorProfile()
     {
         return $this->hasOne(SponsorProfile::class);
+    }
+
+    public function payments()
+    {
+        return $this->hasMany(Payment::class);
     }
 }

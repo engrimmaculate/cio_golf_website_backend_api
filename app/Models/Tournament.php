@@ -22,6 +22,7 @@ class Tournament extends Model
         'total_slots',
         'available_slots',
         'prize_pool',
+        'registration_fee',
         'status',
         'image',
     ];
@@ -33,6 +34,7 @@ class Tournament extends Model
             'end_date' => 'date',
             'registration_deadline' => 'date',
             'prize_pool' => 'decimal:2',
+            'registration_fee' => 'decimal:2',
             'total_slots' => 'integer',
             'available_slots' => 'integer',
         ];

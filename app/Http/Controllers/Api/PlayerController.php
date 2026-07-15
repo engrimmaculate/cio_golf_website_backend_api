@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Player;
+use App\Models\AuditLog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 
 class PlayerController extends Controller
@@ -65,12 +67,15 @@ class PlayerController extends Controller
             'country' => 'nullable|string|max:255',
             'category' => 'nullable|string|max:255',
             'experience' => 'nullable|string',
-            'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
         ]);
 
-        if ($request->hasFile('profile_photo')) {
-            $path = $request->file('profile_photo')->store('player-photos', 'public');
-            $validated['profile_photo'] = $path;
+        $photoPath = null;
+        try {
+            if ($request->hasFile('profile_photo') && $request->file('profile_photo')->isValid()) {
+                $photoPath = $request->file('profile_photo')->store('player-photos', 'public');
+            }
+        } catch (\Exception $e) {
+            \Log::warning('Profile photo upload failed: ' . $e->getMessage());
         }
 
         $player->update([
@@ -85,7 +90,7 @@ class PlayerController extends Controller
             'country' => $validated['country'] ?? $player->country,
             'category' => $validated['category'] ?? $player->category,
             'experience' => $validated['experience'] ?? $player->experience,
-            'profile_photo' => $validated['profile_photo'] ?? $player->profile_photo,
+            'profile_photo' => $photoPath ?? $player->profile_photo,
             'status' => 'completed',
         ]);
 
@@ -141,5 +146,68 @@ class PlayerController extends Controller
         $user->update([$request->document_type => $path]);
 
         return response()->json(['message' => 'Document uploaded', 'path' => $path]);
+    }
+
+    public function requestPaymentLink(Request $request)
+    {
+        $player = Player::with(['tournament', 'user'])->where('user_id', $request->user()->id)->firstOrFail();
+
+        if (!$player->tournament) {
+            return response()->json(['message' => 'No tournament assigned. Contact your club.'], 400);
+        }
+
+        // Invalidate existing pending payments
+        \App\Models\Payment::where('player_id', $player->id)
+            ->where('status', 'pending')
+            ->update(['status' => 'expired']);
+
+        $amount = $player->tournament->registration_fee
+            ?? config('services.paystack.registration_fee', 50000);
+
+        $payment = \App\Models\Payment::create([
+            'player_id' => $player->id,
+            'user_id' => $player->user_id,
+            'reference' => \App\Models\Payment::generateReference(),
+            'amount' => $amount,
+            'currency' => 'NGN',
+            'status' => 'pending',
+            'token' => \App\Models\Payment::generateToken(),
+            'token_expires_at' => now()->addDays(7),
+            'description' => 'CIO International Golf Classic - Registration Fee (Requested)',
+        ]);
+
+        // Send payment link email
+        $frontendUrl = rtrim(env('FRONTEND_URL', 'http://localhost:3000'), '/');
+        $paymentUrl = $frontendUrl . '/payment/public/' . $payment->token;
+
+        try {
+            Mail::send('emails.player-payment-link', [
+                'name' => $player->full_name,
+                'paymentUrl' => $paymentUrl,
+                'amount' => $amount,
+                'expiresAt' => $payment->token_expires_at->format('F j, Y'),
+            ], function ($message) use ($player) {
+                $message->to($player->email, $player->full_name)
+                    ->subject('Your Payment Link — CIO International Golf Classic');
+            });
+        } catch (\Exception $e) {
+            \Log::error('Request payment link email failed: ' . $e->getMessage());
+        }
+
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'action' => 'request_payment_link',
+            'model_type' => Player::class,
+            'model_id' => $player->id,
+            'new_values' => ['payment_id' => $payment->id, 'reference' => $payment->reference],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json([
+            'message' => 'New payment link generated and sent to your email.',
+            'payment' => $payment,
+            'payment_url' => $paymentUrl,
+        ]);
     }
 }

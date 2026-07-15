@@ -61,6 +61,7 @@ class TournamentController extends Controller
             'registration_deadline' => 'nullable|date',
             'total_slots' => 'nullable|integer|min:1',
             'prize_pool' => 'nullable|numeric|min:0',
+            'registration_fee' => 'nullable|numeric|min:0',
             'status' => 'nullable|string',
             'image' => 'nullable|string',
         ]);
@@ -96,6 +97,7 @@ class TournamentController extends Controller
             'total_slots' => 'nullable|integer|min:1',
             'available_slots' => 'nullable|integer|min:0',
             'prize_pool' => 'nullable|numeric|min:0',
+            'registration_fee' => 'nullable|numeric|min:0',
             'status' => 'nullable|string',
             'image' => 'nullable|string',
         ]);
