@@ -9,7 +9,6 @@ use App\Models\WebhookLog;
 use App\Services\PaystackService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 
 class PaymentController extends Controller
 {
@@ -28,12 +27,17 @@ class PaymentController extends Controller
         ]);
 
         $player = Player::with('tournament')->findOrFail($request->player_id);
-        $amount = $player->tournament->registration_fee ?? config('services.paystack.registration_fee', 50000);
+
+        // Calculate registration fee + dynamic support charges
+        $registrationFee = $player->tournament->registration_fee ?? config('services.paystack.registration_fee', 50000);
+        $supportCharges = $player->tournament->support_charges ?? 500;
+        $amount = $registrationFee + $supportCharges;
 
         // Check for existing completed payment
         $existing = Payment::where('player_id', $player->id)
             ->where('status', 'completed')
             ->first();
+
         if ($existing) {
             return response()->json(['message' => 'Payment already completed.', 'payment' => $existing], 400);
         }
@@ -56,10 +60,16 @@ class PaymentController extends Controller
                 'token_expires_at' => now()->addDays(7),
                 'description' => 'CIO International Golf Classic 7th Edition - Registration Fee',
             ]);
+        } else {
+            // Always generate a new reference on retry attempts to prevent Paystack duplicate errors
+            $payment->update([
+                'amount' => $amount,
+                'reference' => Payment::generateReference(),
+            ]);
         }
 
         $email = $player->email;
-        $callbackUrl = config('services.paystack.callback_url', 'http://localhost:3000/payment/verify');
+        $callbackUrl = config('services.paystack.callback_url', 'https://ciogolfclassic.com/payment/verify');
 
         $result = $this->paystack->initializeTransaction([
             'email' => $email,
@@ -108,20 +118,23 @@ class PaymentController extends Controller
             return response()->json(['message' => 'Player not found for this payment.'], 400);
         }
 
-        // Use tournament fee if available, otherwise fall back to config
-        $amount = ($payment->player->tournament->registration_fee ?? null)
-            ?? config('services.paystack.registration_fee', 50000);
+        // Properly fetch tournament fee with config fallback, plus support charges
+        $tournament = $payment->player->tournament;
+        $registrationFee = $tournament->registration_fee ?? config('services.paystack.registration_fee', 50000);
+        $supportCharges = $tournament->support_charges ?? 500;
+        $amount = $registrationFee + $supportCharges;
 
         if (!$amount || $amount <= 0) {
             return response()->json(['message' => 'Invalid registration fee.'], 400);
         }
 
-        // Update payment amount in case it changed
-        if ($payment->amount != $amount) {
-            $payment->update(['amount' => $amount]);
-        }
+        // Always assign a fresh reference whenever the payment link is initialized
+        $payment->update([
+            'amount' => $amount,
+            'reference' => Payment::generateReference(),
+        ]);
 
-        $callbackUrl = config('services.paystack.callback_url', 'http://localhost:3000/payment/verify');
+        $callbackUrl = config('services.paystack.callback_url', 'https://ciogolfclassic.com/payment/verify');
 
         $result = $this->paystack->initializeTransaction([
             'email' => $payment->player->email ?? 'player@ciogolf.com',
@@ -227,10 +240,13 @@ class PaymentController extends Controller
             return response()->json(['data' => []]);
         }
 
+        $perPage = (int) $request->get('per_page', 15);
+        $perPage = ($perPage > 0 && $perPage <= 100) ? $perPage : 15;
+
         $payments = Payment::where('player_id', $player->id)
-            ->with('player.tournament')
+            ->with(['player.tournament'])
             ->latest()
-            ->paginate($request->get('per_page', 15));
+            ->paginate($perPage);
 
         return response()->json($payments);
     }
@@ -337,7 +353,7 @@ class PaymentController extends Controller
 
                 // Log 1 out of every 50 successful transactions with full detail
                 $totalCompleted = Payment::where('status', 'completed')->count();
-                $isSample = ($totalCompleted % 50 === 0);
+                $isSample = ($totalCompleted % 10 === 0);
 
                 WebhookLog::create(array_merge($logData, [
                     'payment_id' => $payment->id,

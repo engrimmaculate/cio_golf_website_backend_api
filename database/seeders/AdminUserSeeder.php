@@ -11,7 +11,7 @@ class AdminUserSeeder extends Seeder
     public function run(): void
     {
         User::updateOrCreate(
-            ['email' => 'superadmin@ciogolf.com'],
+            ['email' => 'superadmin@ciogolfclassic.com'],
             [
                 'name' => 'Super Admin',
                 'password' => Hash::make('password'),
@@ -23,7 +23,7 @@ class AdminUserSeeder extends Seeder
         );
 
         User::updateOrCreate(
-            ['email' => 'admin@ciogolf.com'],
+            ['email' => 'admin@ciogolfclassic.com'],
             [
                 'name' => 'Admin',
                 'password' => Hash::make('password'),
@@ -35,7 +35,7 @@ class AdminUserSeeder extends Seeder
         );
 
         User::updateOrCreate(
-            ['email' => 'committee@ciogolf.com'],
+            ['email' => 'committee@ciogolfclassic.com'],
             [
                 'name' => 'Committee Member',
                 'password' => Hash::make('password'),

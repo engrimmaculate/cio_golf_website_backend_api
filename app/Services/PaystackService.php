@@ -10,9 +10,10 @@ class PaystackService
     protected string $secretKey;
     protected string $baseUrl = 'https://api.paystack.co';
 
-    public function __construct()
+    public function __construct(?string $secretKey = null)
     {
-        $this->secretKey = config('services.paystack.secret_key', '');
+        // (string) cast ensures null becomes "" so PHP typed property won't crash
+        $this->secretKey = $secretKey ?? (string) config('services.paystack.secret_key', '');
     }
 
     public function initializeTransaction(array $data): array

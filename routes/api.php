@@ -33,6 +33,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/tournaments', [TournamentController::class, 'index']);
     Route::get('/tournaments/upcoming', [TournamentController::class, 'upcoming']);
     Route::get('/tournaments/published', [TournamentController::class, 'published']);
+    Route::get('/tournaments/overview', [TournamentController::class, 'overview']);
     Route::get('/tournaments/{id}', [TournamentController::class, 'show']);
 
     // Player routes (own profile) — must be before /players/{id}
@@ -78,7 +79,6 @@ Route::prefix('v1')->group(function () {
     // Public payment routes
     Route::get('/payments/token/{token}', [PaymentController::class, 'initializeByToken']);
     Route::post('/payments/verify', [PaymentController::class, 'verify']);
-    Route::get('/payments/{reference}', [PaymentController::class, 'getByReference']);
     Route::post('/payments/webhook', [PaymentController::class, 'webhook']);
 
     // Protected routes
@@ -200,4 +200,7 @@ Route::prefix('v1')->group(function () {
             Route::delete('/clubs/{clubId}/players/{playerId}', [ClubController::class, 'destroyClubPlayer']);
         });
     });
+
+    // Public payment lookup (kept last so it never shadows /payments/my)
+    Route::get('/payments/{reference}', [PaymentController::class, 'getByReference']);
 });

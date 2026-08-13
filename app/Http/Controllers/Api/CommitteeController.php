@@ -18,19 +18,26 @@ class CommitteeController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
+            'slug' => 'nullable|string|max:255|unique:tournaments,slug',
             'description' => 'nullable|string',
             'venue' => 'required|string',
             'host_country' => 'required|string',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after:start_date',
-            'registration_deadline' => 'required|date|before:start_date',
-            'total_slots' => 'required|integer',
+            'registration_deadline' => 'nullable|date',
+            'total_slots' => 'nullable|integer|min:1',
+            'available_slots' => 'nullable|integer|min:0',
             'prize_pool' => 'nullable|numeric',
+            'registration_fee' => 'nullable|numeric|min:0',
+            'support_charges' => 'nullable|numeric|min:0',
+            'max_tournament_player_expected' => 'nullable|integer|min:1',
+            'max_male_expected_per_club' => 'nullable|integer|min:0',
+            'max_female_expected_per_club' => 'nullable|integer|min:0',
             'image' => 'nullable|string',
         ]);
 
-        $validated['slug'] = \Str::slug($validated['name']);
-        $validated['available_slots'] = $validated['total_slots'];
+        $validated['slug'] = $validated['slug'] ?? \Str::slug($validated['name']);
+        $validated['available_slots'] = $validated['available_slots'] ?? ($validated['total_slots'] ?? 0);
         $validated['status'] = 'draft';
 
         $tournament = Tournament::create($validated);
@@ -44,18 +51,27 @@ class CommitteeController extends Controller
 
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
+            'slug' => 'nullable|string|max:255|unique:tournaments,slug,' . $tournament->id,
             'description' => 'nullable|string',
             'venue' => 'sometimes|string',
             'host_country' => 'sometimes|string',
             'start_date' => 'sometimes|date',
             'end_date' => 'sometimes|date|after:start_date',
-            'registration_deadline' => 'sometimes|date',
-            'total_slots' => 'sometimes|integer',
+            'registration_deadline' => 'nullable|date',
+            'total_slots' => 'sometimes|integer|min:1',
+            'available_slots' => 'nullable|integer|min:0',
             'prize_pool' => 'nullable|numeric',
+            'registration_fee' => 'nullable|numeric|min:0',
+            'support_charges' => 'nullable|numeric|min:0',
+            'max_tournament_player_expected' => 'nullable|integer|min:1',
+            'max_male_expected_per_club' => 'nullable|integer|min:0',
+            'max_female_expected_per_club' => 'nullable|integer|min:0',
+            'status' => 'nullable|string',
+            'image' => 'nullable|string',
         ]);
 
         if (isset($validated['name'])) {
-            $validated['slug'] = \Str::slug($validated['name']);
+            $validated['slug'] = $validated['slug'] ?? \Str::slug($validated['name']);
         }
 
         $tournament->update($validated);

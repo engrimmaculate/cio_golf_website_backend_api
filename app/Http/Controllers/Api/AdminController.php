@@ -9,6 +9,7 @@ use App\Models\Tournament;
 use App\Models\Sponsor;
 use App\Models\Registration;
 use App\Models\AuditLog;
+use App\Models\Payment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -22,7 +23,7 @@ class AdminController extends Controller
         $totalUsers = User::count();
         $totalPlayers = Player::count();
         $totalTournaments = Tournament::count();
-        $totalRevenue = \App\Models\Payment::where('status', 'completed')->sum('amount');
+        $totalRevenue = Payment::where('status', 'completed')->sum('amount');
 
         return response()->json([
             'data' => [
@@ -82,7 +83,7 @@ class AdminController extends Controller
     public function analytics(Request $request)
     {
         $period = $request->get('period', '30');
-        $totalRevenue = \App\Models\Payment::where('status', 'completed')->sum('amount');
+        $totalRevenue = Payment::where('status', 'completed')->sum('amount');
 
         return response()->json([
             'data' => [
@@ -180,110 +181,134 @@ class AdminController extends Controller
     }
 
     public function sendPaymentLink(Request $request, $id)
-    {
-        $player = Player::with(['tournament', 'user'])->findOrFail($id);
+{
+    $player = Player::with(['tournament', 'user'])->findOrFail($id);
 
-        // Verify the user's email
-        if ($player->user && !$player->user->email_verified_at) {
-            $player->user->update(['email_verified_at' => now()]);
-        }
+    // Verify the user's email
+    if ($player->user && !$player->user->email_verified_at) {
+        $player->user->update(['email_verified_at' => now()]);
+    }
 
-        // Approve the player
-        $player->update([
-            'status' => 'approved',
-            'approved_at' => now(),
+    // Approve the player
+    $player->update([
+        'status' => 'approved',
+        'approved_at' => now(),
+    ]);
+
+    // Calculate registration fee + dynamic support charges
+    $tournament = $player->tournament;
+    $registrationFee = $tournament->registration_fee ?? config('services.paystack.registration_fee', 50000);
+    $supportCharges = $tournament->support_charges ?? 500;
+    $amount = $registrationFee + $supportCharges;
+
+    // Find or create payment record
+    $payment = Payment::where('player_id', $player->id)
+        ->where('status', 'pending')
+        ->where('token_expires_at', '>', now())
+        ->first();
+
+    if ($payment) {
+        // Update existing pending payment with fresh reference & updated total amount
+        $payment->update([
+            'amount' => $amount,
+            'reference' => Payment::generateReference(),
         ]);
-
-        // Find or create payment record
-        $payment = \App\Models\Payment::where('player_id', $player->id)
-            ->where('status', 'pending')
-            ->where('token_expires_at', '>', now())
-            ->first();
-
-        if (!$payment) {
-            $amount = $player->tournament->registration_fee ?? config('services.paystack.registration_fee', 50000);
-            $payment = \App\Models\Payment::create([
-                'player_id' => $player->id,
-                'user_id' => $player->user_id,
-                'reference' => \App\Models\Payment::generateReference(),
-                'amount' => $amount,
-                'currency' => 'NGN',
-                'status' => 'pending',
-                'token' => \App\Models\Payment::generateToken(),
-                'token_expires_at' => now()->addDays(7),
-                'description' => 'CIO International Golf Classic - Registration Fee',
-            ]);
-        }
-
-        // Send payment link email
-        $frontendUrl = rtrim(env('FRONTEND_URL', 'http://localhost:3000'), '/');
-        $paymentUrl = $frontendUrl . '/payment/public/' . $payment->token;
-        $amount = $player->tournament->registration_fee ?? config('services.paystack.registration_fee', 50000);
-
-        try {
-            Mail::send('emails.player-payment-link', [
-                'name' => $player->full_name,
-                'paymentUrl' => $paymentUrl,
-                'amount' => $amount,
-                'expiresAt' => $payment->token_expires_at->format('F j, Y'),
-            ], function ($message) use ($player) {
-                $message->to($player->email, $player->full_name)
-                    ->subject('Complete Your Payment — CIO International Golf Classic');
-            });
-        } catch (\Exception $e) {
-            Log::error('Payment link email failed: ' . $e->getMessage());
-        }
-
-        AuditLog::create([
-            'user_id' => $request->user()->id,
-            'action' => 'send_payment_link',
-            'model_type' => Player::class,
-            'model_id' => $player->id,
-            'new_values' => ['status' => 'approved', 'email_verified_at' => now()->toDateTimeString()],
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-        ]);
-
-        return response()->json([
-            'message' => 'Player approved and payment link sent.',
-            'player' => $player->fresh(),
-            'payment' => $payment,
+    } else {
+        $payment = Payment::create([
+            'player_id' => $player->id,
+            'user_id' => $player->user_id,
+            'reference' => Payment::generateReference(),
+            'amount' => $amount,
+            'currency' => 'NGN',
+            'status' => 'pending',
+            'token' => Payment::generateToken(),
+            'token_expires_at' => now()->addDays(7),
+            'description' => 'CIO International Golf Classic - Registration Fee',
         ]);
     }
+
+    // Send payment link email
+    $frontendUrl = rtrim(config('app.frontend_url', 'https://ciogolfclassic.com'), '/');
+    $paymentUrl = $frontendUrl . '/payment/public/' . $payment->token;
+
+    try {
+        Mail::send('emails.player-payment-link', [
+            'name' => $player->full_name,
+            'paymentUrl' => $paymentUrl,
+            'amount' => $amount,
+            'expiresAt' => $payment->token_expires_at->format('F j, Y'),
+        ], function ($message) use ($player) {
+            $message->to($player->email, $player->full_name)
+                ->subject('Complete Your Payment — CIO International Golf Classic');
+        });
+    } catch (\Exception $e) {
+        Log::error('Payment link email failed: ' . $e->getMessage());
+    }
+
+    AuditLog::create([
+        'user_id' => $request->user()->id,
+        'action' => 'send_payment_link',
+        'model_type' => Player::class,
+        'model_id' => $player->id,
+        'new_values' => ['status' => 'approved', 'email_verified_at' => now()->toDateTimeString()],
+        'ip_address' => $request->ip(),
+        'user_agent' => $request->userAgent(),
+    ]);
+
+    return response()->json([
+        'message' => 'Player approved and payment link sent.',
+        'player' => $player->fresh(),
+        'payment' => $payment,
+    ]);
+}
 
     public function regeneratePaymentLink(Request $request, $id)
     {
         $player = Player::with(['tournament', 'user'])->findOrFail($id);
-
+    
         if (!$player->user) {
             return response()->json(['message' => 'Player has no associated user account.'], 400);
         }
-
-        // Invalidate all existing pending payments for this player
-        \App\Models\Payment::where('player_id', $player->id)
+    
+        // Calculate registration fee + dynamic support charges
+        $tournament = $player->tournament;
+        $registrationFee = $tournament->registration_fee ?? config('services.paystack.registration_fee', 50000);
+        $supportCharges = $tournament->support_charges ?? 500;
+        $amount = $registrationFee + $supportCharges;
+    
+        // Look for an existing pending payment record
+        $payment = Payment::where('player_id', $player->id)
             ->where('status', 'pending')
-            ->update(['status' => 'expired']);
-
-        // Create new payment with fresh token
-        $amount = ($player->tournament->registration_fee ?? null)
-            ?? config('services.paystack.registration_fee', 50000);
-
-        $payment = \App\Models\Payment::create([
-            'player_id' => $player->id,
-            'user_id' => $player->user_id,
-            'reference' => \App\Models\Payment::generateReference(),
-            'amount' => $amount,
-            'currency' => 'NGN',
-            'status' => 'pending',
-            'token' => \App\Models\Payment::generateToken(),
-            'token_expires_at' => now()->addDays(7),
-            'description' => 'CIO International Golf Classic - Registration Fee (Regenerated)',
-        ]);
-
+            ->first();
+    
+        if ($payment) {
+            // Update existing pending record with fresh reference, token, and extended expiration
+            $payment->update([
+                'reference' => Payment::generateReference(),
+                'amount' => $amount,
+                'token' => Payment::generateToken(),
+                'token_expires_at' => now()->addDays(7),
+                'description' => 'CIO International Golf Classic - Registration Fee (Regenerated)',
+            ]);
+        } else {
+            // Create new record only if no pending payment exists
+            $payment = Payment::create([
+                'player_id' => $player->id,
+                'user_id' => $player->user_id,
+                'reference' => Payment::generateReference(),
+                'amount' => $amount,
+                'currency' => 'NGN',
+                'status' => 'pending',
+                'token' => Payment::generateToken(),
+                'token_expires_at' => now()->addDays(7),
+                'description' => 'CIO International Golf Classic - Registration Fee (Regenerated)',
+            ]);
+        }
+    
         // Send payment link email
-        $frontendUrl = rtrim(env('FRONTEND_URL', 'http://localhost:3000'), '/');
+        $frontendUrl = rtrim(config('app.frontend_url', 'https://ciogolfclassic.com'), '/');
         $paymentUrl = $frontendUrl . '/payment/public/' . $payment->token;
-
+    
         try {
             Mail::send('emails.player-payment-link', [
                 'name' => $player->full_name,
@@ -297,7 +322,7 @@ class AdminController extends Controller
         } catch (\Exception $e) {
             Log::error('Regenerate payment link email failed: ' . $e->getMessage());
         }
-
+    
         AuditLog::create([
             'user_id' => $request->user()->id,
             'action' => 'regenerate_payment_link',
@@ -307,9 +332,9 @@ class AdminController extends Controller
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);
-
+    
         return response()->json([
-            'message' => 'New payment link generated and email sent.',
+            'message' => 'Payment link updated and email sent.',
             'payment' => $payment,
             'payment_url' => $paymentUrl,
         ]);
@@ -319,11 +344,11 @@ class AdminController extends Controller
     {
         $player = Player::findOrFail($id);
 
-        $payments = \App\Models\Payment::where('player_id', $player->id)
+        $payments = Payment::where('player_id', $player->id)
             ->orderBy('created_at', 'desc')
             ->get();
 
-        $frontendUrl = rtrim(env('FRONTEND_URL', 'http://localhost:3000'), '/');
+        $frontendUrl = rtrim(env('FRONTEND_URL', 'https://ciogolfclassic.com'), '/');
         $payments->each(function ($payment) use ($frontendUrl) {
             $payment->payment_url = $payment->token
                 ? $frontendUrl . '/payment/public/' . $payment->token

@@ -23,6 +23,10 @@ class Tournament extends Model
         'available_slots',
         'prize_pool',
         'registration_fee',
+        'support_charges',
+        'max_tournament_player_expected',
+        'max_male_expected_per_club',
+        'max_female_expected_per_club',
         'status',
         'image',
     ];
@@ -35,8 +39,12 @@ class Tournament extends Model
             'registration_deadline' => 'date',
             'prize_pool' => 'decimal:2',
             'registration_fee' => 'decimal:2',
+            'support_charges' => 'decimal:2',
             'total_slots' => 'integer',
             'available_slots' => 'integer',
+            'max_tournament_player_expected' => 'integer',
+            'max_male_expected_per_club' => 'integer',
+            'max_female_expected_per_club' => 'integer',
         ];
     }
 
@@ -54,5 +62,22 @@ class Tournament extends Model
     public function fixtures()
     {
         return $this->hasMany(Fixture::class);
+    }
+
+    public function players()
+    {
+        return $this->hasMany(Player::class);
+    }
+
+
+     /**
+     * Calculate total payable fee (Registration Fee + Support Charges)
+     */
+    public function getTotalFeeAttribute(): float
+    {
+        $baseFee = $this->registration_fee ?? config('services.paystack.registration_fee', 50000);
+        $supportCharges = $this->support_charges ?? 500;
+
+        return (float) ($baseFee + $supportCharges);
     }
 }
