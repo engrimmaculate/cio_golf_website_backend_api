@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\ChampionshipReachController;
 use App\Http\Controllers\Api\ClubController;
 use App\Http\Controllers\Api\CommitteeController;
 use App\Http\Controllers\Api\ContactController;
@@ -35,6 +36,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/tournaments/upcoming', [TournamentController::class, 'upcoming']);
     Route::get('/tournaments/published', [TournamentController::class, 'published']);
     Route::get('/tournaments/overview', [TournamentController::class, 'overview']);
+    Route::get('/tournaments/{id}/reach', [TournamentController::class, 'reach']);
     Route::get('/tournaments/{id}', [TournamentController::class, 'show']);
 
     // Player routes (own profile) — must be before /players/{id}
@@ -178,6 +180,13 @@ Route::prefix('v1')->group(function () {
             Route::post('/tournaments', [TournamentController::class, 'store']);
             Route::put('/tournaments/{id}', [TournamentController::class, 'update']);
             Route::delete('/tournaments/{id}', [TournamentController::class, 'destroy']);
+
+            // Admin CRUD for championship reach
+            Route::get('/championship-reach', [ChampionshipReachController::class, 'index']);
+            Route::post('/championship-reach', [ChampionshipReachController::class, 'store']);
+            Route::get('/championship-reach/{id}', [ChampionshipReachController::class, 'show']);
+            Route::put('/championship-reach/{id}', [ChampionshipReachController::class, 'update']);
+            Route::delete('/championship-reach/{id}', [ChampionshipReachController::class, 'destroy']);
         });
 
         // Landing page content management (admin + committee)
@@ -223,6 +232,13 @@ Route::prefix('v1')->group(function () {
             Route::get('/clubs/{clubId}/players/{playerId}', [ClubController::class, 'showClubPlayer']);
             Route::put('/clubs/{clubId}/players/{playerId}', [ClubController::class, 'updateClubPlayer']);
             Route::delete('/clubs/{clubId}/players/{playerId}', [ClubController::class, 'destroyClubPlayer']);
+
+            // Committee CRUD for championship reach
+            Route::get('/championship-reach', [ChampionshipReachController::class, 'index']);
+            Route::post('/championship-reach', [ChampionshipReachController::class, 'store']);
+            Route::get('/championship-reach/{id}', [ChampionshipReachController::class, 'show']);
+            Route::put('/championship-reach/{id}', [ChampionshipReachController::class, 'update']);
+            Route::delete('/championship-reach/{id}', [ChampionshipReachController::class, 'destroy']);
         });
     });
 

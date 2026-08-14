@@ -72,17 +72,45 @@ class TournamentController extends Controller
                     'registered_count' => 0,
                     'expected_limit' => 0,
                     'available_slots' => 0,
+                    'african_countries' => 0,
+                    'clubs_count' => 0,
+                    'entry_fee' => 0,
+                    'support_charges' => 0,
+                    'reach' => [
+                        'african_countries' => 0,
+                        'continents' => 0,
+                        'golf_clubs' => 0,
+                        'official_sponsors' => 0,
+                        'pro_purse' => 0,
+                    ],
                 ],
             ]);
         }
 
-        $registered = $tournament->players()
+        $players = $tournament->players()
+            ->with('club')
             ->whereNotIn('status', ['rejected'])
-            ->count();
+            ->get();
+
+        $registered = $players->count();
 
         $expected = (int) ($tournament->max_tournament_player_expected
             ?: $tournament->total_slots
             ?: 0);
+
+        $africanCountries = $players
+            ->pluck('country')
+            ->filter()
+            ->unique()
+            ->count();
+
+        $clubsCount = $players
+            ->pluck('club_id')
+            ->filter()
+            ->unique()
+            ->count();
+
+        $reach = $tournament->reach;
 
         return response()->json([
             'data' => [
@@ -90,6 +118,33 @@ class TournamentController extends Controller
                 'registered_count' => $registered,
                 'expected_limit' => $expected,
                 'available_slots' => max(0, (int) ($tournament->available_slots ?? $expected) - $registered),
+                'african_countries' => $africanCountries,
+                'clubs_count' => $clubsCount,
+                'entry_fee' => (float) ($tournament->registration_fee ?? 0),
+                'support_charges' => (float) ($tournament->support_charges ?? 0),
+                'reach' => $reach ?? [
+                    'african_countries' => $africanCountries ?: 0,
+                    'continents' => 0,
+                    'golf_clubs' => $clubsCount ?: 0,
+                    'official_sponsors' => 0,
+                    'pro_purse' => (float) ($tournament->prize_pool ?? 0),
+                ],
+            ],
+        ]);
+    }
+
+    public function reach($id)
+    {
+        $tournament = Tournament::findOrFail($id);
+
+        return response()->json([
+            'data' => $tournament->reach ?? [
+                'tournament_id' => $tournament->id,
+                'african_countries' => 0,
+                'continents' => 0,
+                'golf_clubs' => 0,
+                'official_sponsors' => 0,
+                'pro_purse' => 0,
             ],
         ]);
     }

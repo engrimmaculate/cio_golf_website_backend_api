@@ -69,6 +69,18 @@ class Tournament extends Model
         return $this->hasMany(Player::class);
     }
 
+    public function reach()
+    {
+        return $this->hasOne(ChampionshipReach::class);
+    }
+
+    public function getEditionNumberAttribute(): int
+    {
+        preg_match('/(\d+)\s*(?:st|nd|rd|th)\s*edition/i', $this->name ?? '', $matches);
+
+        return isset($matches[1]) ? (int) $matches[1] : 0;
+    }
+
 
      /**
      * Calculate total payable fee (Registration Fee + Support Charges)

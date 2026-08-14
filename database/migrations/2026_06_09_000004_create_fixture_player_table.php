@@ -13,6 +13,7 @@ return new class extends Migration
             $table->foreignId('player_id')->constrained('users')->onDelete('cascade');
             $table->integer('score')->nullable();
             $table->primary(['fixture_id', 'player_id']);
+            $table->timestamps();
         });
     }
 
