@@ -4,10 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 
 class Player extends Model
 {
     use HasFactory;
+
+    protected $appends = ['profile_photo_url'];
 
     protected $fillable = [
         'club_id',
@@ -39,6 +43,36 @@ class Player extends Model
             'verified_at' => 'datetime',
             'approved_at' => 'datetime',
         ];
+    }
+
+    public function getProfilePhotoUrlAttribute(): string
+    {
+        $root = rtrim(request()->root(), '/');
+
+        if (empty($this->profile_photo)) {
+            return $root . '/logo/cio-logo.jpeg';
+        }
+
+        try {
+            if (!Storage::disk('local')->exists($this->profile_photo)) {
+                return $root . '/logo/cio-logo.jpeg';
+            }
+
+            $signed = URL::temporarySignedRoute(
+                'player.photo',
+                now()->addHours(1),
+                ['player' => $this->id]
+            );
+
+            $appUrl = rtrim(config('app.url'), '/');
+            if (str_starts_with($signed, $appUrl . '/')) {
+                return $root . substr($signed, strlen($appUrl));
+            }
+
+            return $signed;
+        } catch (\Throwable $e) {
+            return $root . '/logo/cio-logo.jpeg';
+        }
     }
 
     public function club()

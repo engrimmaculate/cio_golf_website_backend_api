@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\ClubController;
 use App\Http\Controllers\Api\CommitteeController;
 use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\FixtureController;
+use App\Http\Controllers\Api\LandingContentController;
 use App\Http\Controllers\Api\NewsController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PlayerController;
@@ -46,6 +47,9 @@ Route::prefix('v1')->group(function () {
     });
 
     Route::get('/players', [PlayerController::class, 'index']);
+    Route::get('/players/photos/{player}', [PlayerController::class, 'photo'])
+        ->name('player.photo')
+        ->middleware('signed');
     Route::get('/players/{id}', [PlayerController::class, 'show']);
 
     Route::get('/fixtures', [FixtureController::class, 'index']);
@@ -70,6 +74,11 @@ Route::prefix('v1')->group(function () {
 
     Route::get('/team', [TeamController::class, 'index']);
     Route::get('/team/department/{department}', [TeamController::class, 'byDepartment']);
+
+    // Landing page content (public)
+    Route::get('/content/awards', [LandingContentController::class, 'awards']);
+    Route::get('/content/schedule', [LandingContentController::class, 'schedule']);
+    Route::get('/content/sponsors', [LandingContentController::class, 'sponsors']);
 
     Route::post('/contact', [ContactController::class, 'send']);
 
@@ -96,6 +105,9 @@ Route::prefix('v1')->group(function () {
             Route::put('/profile', [ClubController::class, 'updateProfile']);
             Route::post('/players/upload', [ClubController::class, 'uploadPlayers']);
             Route::get('/players', [ClubController::class, 'listPlayers']);
+            Route::post('/players', [ClubController::class, 'storeSelfPlayer']);
+            Route::put('/players/{playerId}', [ClubController::class, 'updateSelfPlayer']);
+            Route::delete('/players/{playerId}', [ClubController::class, 'destroySelfPlayer']);
         });
 
         // Scores
@@ -166,6 +178,19 @@ Route::prefix('v1')->group(function () {
             Route::post('/tournaments', [TournamentController::class, 'store']);
             Route::put('/tournaments/{id}', [TournamentController::class, 'update']);
             Route::delete('/tournaments/{id}', [TournamentController::class, 'destroy']);
+        });
+
+        // Landing page content management (admin + committee)
+        Route::prefix('content')->middleware('role:admin,committee')->group(function () {
+            Route::post('/awards', [LandingContentController::class, 'storeAward']);
+            Route::put('/awards/{id}', [LandingContentController::class, 'updateAward']);
+            Route::delete('/awards/{id}', [LandingContentController::class, 'destroyAward']);
+            Route::post('/schedule', [LandingContentController::class, 'storeSchedule']);
+            Route::put('/schedule/{id}', [LandingContentController::class, 'updateSchedule']);
+            Route::delete('/schedule/{id}', [LandingContentController::class, 'destroySchedule']);
+            Route::post('/sponsors', [LandingContentController::class, 'storeSponsor']);
+            Route::put('/sponsors/{id}', [LandingContentController::class, 'updateSponsor']);
+            Route::delete('/sponsors/{id}', [LandingContentController::class, 'destroySponsor']);
         });
 
         // Committee routes

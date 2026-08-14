@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 
 class AdminController extends Controller
 {
@@ -510,10 +511,50 @@ class AdminController extends Controller
             'user_type' => 'nullable|string',
             'phone' => 'nullable|string',
             'nationality' => 'nullable|string',
+            'full_name' => 'nullable|string|max:255',
+            'gender' => 'nullable|in:male,female,other',
+            'category' => 'nullable|string|max:255',
+            'handicap' => 'nullable|numeric|min:0|max:54',
+            'shirt_size' => 'nullable|string|max:10',
+            'ranking' => 'nullable|integer|min:0',
+            'city' => 'nullable|string|max:255',
+            'state' => 'nullable|string|max:255',
+            'country' => 'nullable|string|max:255',
+            'experience' => 'nullable|string',
+            'tournament_id' => 'nullable|exists:tournaments,id',
+            'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png,webp,gif|max:2048',
         ]);
 
         $validated['password'] = Hash::make($validated['password']);
         $user = User::create($validated);
+
+        $photoPath = null;
+        if ($request->hasFile('profile_photo') && $request->file('profile_photo')->isValid()) {
+            $photoPath = $request->file('profile_photo')->store('player-photos', 'local');
+            $user->update(['avatar' => $photoPath]);
+        }
+
+        $createdPlayer = null;
+        if (($validated['role'] ?? '') === 'player') {
+            $createdPlayer = Player::create([
+                'user_id' => $user->id,
+                'full_name' => $validated['full_name'] ?? $validated['name'],
+                'email' => $validated['email'],
+                'phone' => $validated['phone'] ?? null,
+                'gender' => $validated['gender'] ?? null,
+                'category' => $validated['category'] ?? null,
+                'handicap' => $validated['handicap'] ?? null,
+                'shirt_size' => $validated['shirt_size'] ?? null,
+                'ranking' => $validated['ranking'] ?? null,
+                'city' => $validated['city'] ?? null,
+                'state' => $validated['state'] ?? null,
+                'country' => $validated['country'] ?? null,
+                'experience' => $validated['experience'] ?? null,
+                'tournament_id' => $validated['tournament_id'] ?? null,
+                'profile_photo' => $photoPath,
+                'status' => 'pending',
+            ]);
+        }
 
         AuditLog::create([
             'user_id' => $request->user()->id,
@@ -525,7 +566,11 @@ class AdminController extends Controller
             'user_agent' => $request->userAgent(),
         ]);
 
-        return response()->json(['message' => 'User created.', 'user' => $user], 201);
+        return response()->json([
+            'message' => 'User created.',
+            'user' => $user,
+            'player' => $createdPlayer,
+        ], 201);
     }
 
     public function updateUser(Request $request, $userId)
@@ -539,9 +584,54 @@ class AdminController extends Controller
             'user_type' => 'nullable|string',
             'phone' => 'nullable|string',
             'nationality' => 'nullable|string',
+            'full_name' => 'nullable|string|max:255',
+            'gender' => 'nullable|in:male,female,other',
+            'category' => 'nullable|string|max:255',
+            'handicap' => 'nullable|numeric|min:0|max:54',
+            'shirt_size' => 'nullable|string|max:10',
+            'ranking' => 'nullable|integer|min:0',
+            'city' => 'nullable|string|max:255',
+            'state' => 'nullable|string|max:255',
+            'country' => 'nullable|string|max:255',
+            'experience' => 'nullable|string',
+            'tournament_id' => 'nullable|exists:tournaments,id',
+            'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png,webp,gif|max:2048',
         ]);
 
         $user->update($validated);
+
+        if ($request->hasFile('profile_photo') && $request->file('profile_photo')->isValid()) {
+            $photoPath = $request->file('profile_photo')->store('player-photos', 'local');
+            $user->update(['avatar' => $photoPath]);
+
+            $player = Player::where('user_id', $user->id)->first();
+            if ($player) {
+                $oldPhoto = $player->profile_photo;
+                if ($oldPhoto && $oldPhoto !== $photoPath && Storage::disk('local')->exists($oldPhoto)) {
+                    Storage::disk('local')->delete($oldPhoto);
+                }
+                $player->update(['profile_photo' => $photoPath]);
+            }
+        }
+
+        $player = Player::where('user_id', $user->id)->first();
+        if ($player) {
+            $player->update([
+                'full_name' => $validated['full_name'] ?? $player->full_name,
+                'email' => $validated['email'] ?? $player->email,
+                'phone' => $validated['phone'] ?? $player->phone,
+                'gender' => $validated['gender'] ?? $player->gender,
+                'category' => $validated['category'] ?? $player->category,
+                'handicap' => $validated['handicap'] ?? $player->handicap,
+                'shirt_size' => $validated['shirt_size'] ?? $player->shirt_size,
+                'ranking' => $validated['ranking'] ?? $player->ranking,
+                'city' => $validated['city'] ?? $player->city,
+                'state' => $validated['state'] ?? $player->state,
+                'country' => $validated['country'] ?? $player->country,
+                'experience' => $validated['experience'] ?? $player->experience,
+                'tournament_id' => $validated['tournament_id'] ?? $player->tournament_id,
+            ]);
+        }
 
         AuditLog::create([
             'user_id' => $request->user()->id,

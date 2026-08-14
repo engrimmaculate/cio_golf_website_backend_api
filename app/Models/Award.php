@@ -5,30 +5,21 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Sponsor extends Model
+class Award extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'name',
-        'type',
-        'tier',
-        'logo',
-        'website',
-        'description',
-        'address',
-        'phone',
-        'email',
-        'featured',
-        'sort_order',
+        'category',
+        'prize',
+        'position',
         'is_active',
     ];
 
     protected function casts(): array
     {
         return [
-            'featured' => 'boolean',
-            'sort_order' => 'integer',
+            'position' => 'integer',
             'is_active' => 'boolean',
         ];
     }

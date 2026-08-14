@@ -10,6 +10,7 @@ use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class ClubController extends Controller
@@ -385,6 +386,62 @@ class ClubController extends Controller
     {
         $club = Club::findOrFail($clubId);
 
+        return $this->storePlayerForClub($request, $club);
+    }
+
+    public function updateClubPlayer(Request $request, $clubId, $playerId)
+    {
+        $club = Club::findOrFail($clubId);
+
+        return $this->updatePlayerForClub($request, $club, $playerId);
+    }
+
+    public function destroyClubPlayer(Request $request, $clubId, $playerId)
+    {
+        $club = Club::findOrFail($clubId);
+
+        return $this->destroyPlayerForClub($request, $club, $playerId);
+    }
+
+    // ──────────────────────────────────────────────
+    // Club owner (self) player CRUD
+    // ──────────────────────────────────────────────
+
+    public function storeSelfPlayer(Request $request)
+    {
+        if ($request->user()->user_type !== 'club') {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        $club = Club::where('user_id', $request->user()->id)->firstOrFail();
+
+        return $this->storePlayerForClub($request, $club);
+    }
+
+    public function updateSelfPlayer(Request $request, $playerId)
+    {
+        if ($request->user()->user_type !== 'club') {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        $club = Club::where('user_id', $request->user()->id)->firstOrFail();
+
+        return $this->updatePlayerForClub($request, $club, $playerId);
+    }
+
+    public function destroySelfPlayer(Request $request, $playerId)
+    {
+        if ($request->user()->user_type !== 'club') {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        $club = Club::where('user_id', $request->user()->id)->firstOrFail();
+
+        return $this->destroyPlayerForClub($request, $club, $playerId);
+    }
+
+    private function storePlayerForClub(Request $request, Club $club)
+    {
         $validated = $request->validate([
             'full_name' => 'required|string|max:255',
             'email' => 'required|email|unique:players,email',
@@ -399,8 +456,17 @@ class ClubController extends Controller
             'country' => 'nullable|string|max:255',
             'experience' => 'nullable|string',
             'tournament_id' => 'nullable|exists:tournaments,id',
+            'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png,webp,gif|max:2048',
             'create_user' => 'nullable|boolean',
         ]);
+
+        unset($validated['profile_photo']);
+
+        $photoPath = null;
+        if ($request->hasFile('profile_photo') && $request->file('profile_photo')->isValid()) {
+            $photoPath = $request->file('profile_photo')->store('player-photos', 'local');
+            $validated['profile_photo'] = $photoPath;
+        }
 
         $createUser = $validated['create_user'] ?? false;
         unset($validated['create_user']);
@@ -415,6 +481,7 @@ class ClubController extends Controller
                 'role' => 'player',
                 'user_type' => 'player',
                 'phone' => $validated['phone'] ?? null,
+                'avatar' => $photoPath,
             ]);
             $playerUserId = $playerUser->id;
 
@@ -479,9 +546,9 @@ class ClubController extends Controller
         ], 201);
     }
 
-    public function updateClubPlayer(Request $request, $clubId, $playerId)
+    private function updatePlayerForClub(Request $request, Club $club, $playerId)
     {
-        $player = Player::where('club_id', $clubId)->findOrFail($playerId);
+        $player = Player::where('club_id', $club->id)->findOrFail($playerId);
 
         $validated = $request->validate([
             'full_name' => 'sometimes|string|max:255',
@@ -497,8 +564,25 @@ class ClubController extends Controller
             'country' => 'nullable|string|max:255',
             'experience' => 'nullable|string',
             'tournament_id' => 'nullable|exists:tournaments,id',
+            'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png,webp,gif|max:2048',
             'status' => 'nullable|in:pending,invited,verified,completed,approved,rejected',
         ]);
+
+        unset($validated['profile_photo']);
+
+        if ($request->hasFile('profile_photo') && $request->file('profile_photo')->isValid()) {
+            $newPath = $request->file('profile_photo')->store('player-photos', 'local');
+            $validated['profile_photo'] = $newPath;
+
+            $oldPhoto = $player->profile_photo;
+            if ($oldPhoto && $oldPhoto !== $newPath && Storage::disk('local')->exists($oldPhoto)) {
+                Storage::disk('local')->delete($oldPhoto);
+            }
+
+            if ($player->user) {
+                $player->user->update(['avatar' => $newPath]);
+            }
+        }
 
         $oldValues = $player->getOriginal();
         $player->update($validated);
@@ -520,9 +604,9 @@ class ClubController extends Controller
         ]);
     }
 
-    public function destroyClubPlayer(Request $request, $clubId, $playerId)
+    private function destroyPlayerForClub(Request $request, Club $club, $playerId)
     {
-        $player = Player::where('club_id', $clubId)->findOrFail($playerId);
+        $player = Player::where('club_id', $club->id)->findOrFail($playerId);
 
         AuditLog::create([
             'user_id' => $request->user()->id,
@@ -533,6 +617,10 @@ class ClubController extends Controller
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);
+
+        if ($player->profile_photo && Storage::disk('local')->exists($player->profile_photo)) {
+            Storage::disk('local')->delete($player->profile_photo);
+        }
 
         $player->delete();
 

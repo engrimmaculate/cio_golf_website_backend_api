@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             AdminUserSeeder::class,
             ClubSeeder::class,
             TournamentSeeder::class,
+            LandingContentSeeder::class,
         ]);
     }
 }

@@ -8,8 +8,8 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('tournaments', function (Blueprint $table) {
-            $table->decimal('registration_fee', 10, 2)->default(50000)->after('prize_pool');
+         Schema::table('tournaments', function (Blueprint $table) {
+            $table->decimal('registration_fee', 10, 2)->default(50000)->after('prize_pool')->change();
         });
     }
 
